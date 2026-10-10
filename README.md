@@ -60,7 +60,7 @@ RepulsKB assumes the game's controls are set to their defaults. When a custom ke
 
 ## License
 
-Distributed under the terms of the [LICENSE](LICENSE) file included in this repository.
+Distributed under the terms of the [LICENSE](https://github.com/axionified/RepulsKB?tab=MIT-1-ov-file) file included in this repository.
 
 ---
 

@@ -23,28 +23,35 @@ const SPECIAL_FEATURES = [
     group: "Scope",
     label: "Hold",
     defaultKey: "z",
-    desc: "Hold the key down to look through your scope. Let go and it closes.",
+    desc: "Hold to look through your scope; release to close it.",
   },
   {
     id: "toggleScope",
     group: "Scope",
     label: "Toggle",
     defaultKey: "p",
-    desc: "Tap once to open your scope, tap again to close it. No need to hold.",
+    desc: "Press once to open your scope and again to close it. No need to hold the key.",
   },
   {
     id: "holdSprint",
     group: "Sprint",
     label: "Hold",
     defaultKey: "shift",
-    desc: "Hold the key down to run. Let go and you walk again — the normal way sprint works.",
+    desc: "Hold to sprint; release to return to walking. Matches the game's standard sprint behavior.",
   },
   {
     id: "toggleSprint",
     group: "Sprint",
     label: "Toggle",
     defaultKey: "m",
-    desc: "Tap once and you'll auto-run whenever you're moving, until you tap it again to turn it off.",
+    desc: "Press once to sprint automatically while moving; press again to turn it off.",
+  },
+  {
+    id: "fire",
+    group: "Fire",
+    label: "Hold",
+    defaultKey: "f",
+    desc: "Hold to fire continuously, equivalent to holding left-click. Release to stop.",
   },
 ];
 
@@ -89,10 +96,34 @@ function normalizeKey(e) {
   return e.key.toLowerCase();
 }
 
+const MODIFIER_KEYS = new Set(["control", "alt", "shift", "meta"]);
+
+function comboFromEvent(e) {
+  const key = normalizeKey(e);
+  if (MODIFIER_KEYS.has(key)) return null; // still waiting on the non-modifier key
+  const parts = [];
+  if (e.ctrlKey) parts.push("ctrl");
+  if (e.altKey) parts.push("alt");
+  if (e.shiftKey) parts.push("shift");
+  if (e.metaKey) parts.push("meta");
+  parts.push(key);
+  return parts.join("+");
+}
+
+const MODIFIER_DISPLAY_NAMES = { ctrl: "Ctrl", alt: "Alt", shift: "Shift", meta: "Cmd" };
+
 function displayKeyName(canonical) {
   if (!canonical) return "?";
   if (KEY_DISPLAY_NAMES[canonical]) return KEY_DISPLAY_NAMES[canonical];
   return canonical.length === 1 ? canonical.toUpperCase() : canonical;
+}
+
+function displayCombo(combo) {
+  if (!combo) return "?";
+  const parts = combo.split("+");
+  const mainKey = parts.pop();
+  const modLabels = parts.map((p) => MODIFIER_DISPLAY_NAMES[p] || p);
+  return [...modLabels, displayKeyName(mainKey)].join(" + ");
 }
 
 function buildDefaultSettings() {
@@ -104,12 +135,12 @@ function buildDefaultSettings() {
   SPECIAL_FEATURES.forEach((f) => {
     special[f.id] = { enabled: true, key: f.defaultKey };
   });
-  return { actions, special };
+  return { actions, special, conveyor: { on: true, combo: "ctrl+k" } };
 }
 
 function mergeSettings(stored) {
   const defaults = buildDefaultSettings();
-  const merged = { actions: {}, special: {} };
+  const merged = { actions: {}, special: {}, conveyor: {} };
   ACTIONS.forEach((a) => {
     merged.actions[a.id] = {
       ...defaults.actions[a.id],
@@ -122,5 +153,6 @@ function mergeSettings(stored) {
       ...((stored && stored.special && stored.special[f.id]) || {}),
     };
   });
+  merged.conveyor = { ...defaults.conveyor, ...((stored && stored.conveyor) || {}) };
   return merged;
 }

@@ -58,14 +58,6 @@ RepulsKB assumes the game's controls are set to their defaults. When a custom ke
 └── logo.png        Extension icon
 
 
-## Contributing
-
-Issues and pull requests are welcome. To add a remappable action, append an entry to the `ACTIONS` array in `common.js`; both `content.js` and `popup.js` read from this shared list.
-
-## Known Limitations
-
-Browsers flag script-generated keyboard and mouse events as `isTrusted: false`. Most sites treat them the same as real input, but a site that explicitly rejects untrusted events cannot be supported by any browser extension.
-
 ## License
 
 Distributed under the terms of the [LICENSE](LICENSE) file included in this repository.

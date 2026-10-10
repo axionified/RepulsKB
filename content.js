@@ -98,35 +98,33 @@
     if (target !== document.body) dispatchAll(target, [makeKeyEvent(type, canonicalKey)]);
   }
 
-  function rightClickDown() {
+  function simulateMouseDown(button) {
     const target = findTarget();
     focusTarget(target);
     const opts = {
       bubbles: true,
       cancelable: true,
       view: window,
-      button: 2,
-      buttons: 2,
+      button: button,
+      buttons: button === 2 ? 2 : 1,
       clientX: lastX,
       clientY: lastY,
       screenX: lastX,
       screenY: lastY,
       pointerType: "mouse",
     };
-    dispatchAll(target, [
-      new PointerEvent("pointerdown", opts),
-      new MouseEvent("mousedown", opts),
-      new MouseEvent("contextmenu", opts),
-    ]);
+    const events = [new PointerEvent("pointerdown", opts), new MouseEvent("mousedown", opts)];
+    if (button === 2) events.push(new MouseEvent("contextmenu", opts));
+    dispatchAll(target, events);
   }
 
-  function rightClickUp() {
+  function simulateMouseUp(button) {
     const target = findTarget();
     const opts = {
       bubbles: true,
       cancelable: true,
       view: window,
-      button: 2,
+      button: button,
       buttons: 0,
       clientX: lastX,
       clientY: lastY,
@@ -138,8 +136,9 @@
   }
 
   function fireRightClick() {
-    rightClickDown();
-    rightClickUp();
+    simulateMouseDown(2);
+    simulateMouseUp(2);
+    scopeOpen = !scopeOpen;
   }
 
   window.addEventListener(
@@ -152,6 +151,10 @@
 
   let shiftOn = false;
   let shiftInterval = null;
+  let scopeOpen = false;
+  let holdSprintKeyIsDown = false;
+  let fireKeyIsDown = false;
+  const heldActionIds = new Set();
 
   function pressShiftOnce() {
     dispatchTargetKey("keydown", "shift");
@@ -203,6 +206,7 @@
     if (settings.special.toggleScope.enabled) set.add(settings.special.toggleScope.key);
     if (settings.special.toggleSprint.enabled) set.add(settings.special.toggleSprint.key);
     if (settings.special.holdSprint.enabled) set.add(settings.special.holdSprint.key);
+    if (settings.special.fire.enabled) set.add(settings.special.fire.key);
     return set;
   }
 
@@ -222,10 +226,42 @@
     return orphans;
   }
 
+  function persistSettings() {
+    try {
+      chrome.storage.sync.set({ repulsSettings: settings });
+    } catch (err) {}
+  }
+
+  function deactivateEverything() {
+    // Restores exactly the state the game would be in if the player had
+    // simply released everything normally, before the extension goes
+    // fully inert.
+    if (scopeOpen) {
+      fireRightClick(); // sends the missing "closing" click; also flips scopeOpen back to false
+    }
+    if (holdSprintKeyIsDown) {
+      dispatchTargetKey("keyup", "shift");
+      holdSprintKeyIsDown = false;
+    }
+    runModeOn = false;
+    movementKeysHeld.clear();
+    turnShiftOff();
+    if (fireKeyIsDown) {
+      simulateMouseUp(0);
+      fireKeyIsDown = false;
+    }
+    for (const actionId of heldActionIds) {
+      const action = ACTIONS.find((a) => a.id === actionId);
+      if (action) dispatchTargetKey("keyup", action.defaultKey);
+    }
+    heldActionIds.clear();
+  }
+
   document.addEventListener(
     "keyup",
     (e) => {
       if (!e.isTrusted) return;
+      if (!settings.conveyor.on) return;
       if (e.key === "Shift" && shiftOn && !typingActive) {
         e.stopImmediatePropagation();
         e.preventDefault();
@@ -238,7 +274,25 @@
     "keydown",
     (e) => {
       if (!e.isTrusted) return;
+
+      // The master combo always works — on or off, typing or not — so the
+      // extension can always be switched back on. Everything else is fully
+      // gated behind conveyor.on: when off, every key passes through
+      // exactly as pressed, with nothing intercepted or dispatched.
+      const combo = comboFromEvent(e);
+      if (combo && combo === settings.conveyor.combo && !e.repeat) {
+        settings.conveyor.on = !settings.conveyor.on;
+        if (!settings.conveyor.on) {
+          deactivateEverything();
+        }
+        persistSettings();
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+
       if (typingActive) return;
+      if (!settings.conveyor.on) return;
 
       const key = normalizeKey(e);
 
@@ -273,6 +327,12 @@
         e.preventDefault();
         e.stopPropagation();
         dispatchTargetKey("keydown", "shift");
+        holdSprintKeyIsDown = true;
+      }
+      const fire = settings.special.fire;
+      if (fire.enabled && key === fire.key && !e.repeat) {
+        simulateMouseDown(0);
+        fireKeyIsDown = true;
       }
 
       for (const action of ACTIONS) {
@@ -281,7 +341,10 @@
         if (key === cfg.key) {
           e.preventDefault();
           e.stopPropagation();
-          if (!e.repeat) dispatchTargetKey("keydown", action.defaultKey);
+          if (!e.repeat) {
+            dispatchTargetKey("keydown", action.defaultKey);
+            heldActionIds.add(action.id);
+          }
         }
       }
     },
@@ -292,7 +355,16 @@
     "keyup",
     (e) => {
       if (!e.isTrusted) return;
+
+      const combo = comboFromEvent(e);
+      if (combo && combo === settings.conveyor.combo) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+
       if (typingActive) return;
+      if (!settings.conveyor.on) return;
 
       const key = normalizeKey(e);
 
@@ -316,6 +388,12 @@
         e.preventDefault();
         e.stopPropagation();
         dispatchTargetKey("keyup", "shift");
+        holdSprintKeyIsDown = false;
+      }
+      const fire = settings.special.fire;
+      if (fire.enabled && key === fire.key) {
+        simulateMouseUp(0);
+        fireKeyIsDown = false;
       }
 
       for (const action of ACTIONS) {
@@ -325,6 +403,7 @@
           e.preventDefault();
           e.stopPropagation();
           dispatchTargetKey("keyup", action.defaultKey);
+          heldActionIds.delete(action.id);
         }
       }
     },
